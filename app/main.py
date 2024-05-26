@@ -1,6 +1,7 @@
 # Uncomment this to pass the first stage
 import socket
 import threading
+import re
 
 
 def handle_connection(client_socket):
@@ -15,25 +16,46 @@ def handle_connection(client_socket):
 
 def parse_request(request) ->list:
     request_str: str = request.decode()
+    parse_request: list = []
     print(f'request_str: {request_str}')
     # e.g: *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
     # ['*2', '$4', 'ECHO', '$3', 'hey', '']
+    # e.g: *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+    # ['*3', 'SET', '3', 'bar', '']
     if '\r\n' in request_str:
-        parse_request = [item for item in request_str.split('\r\n')  if (item and not '*' in item and  not '$' in item) ]
+        parse_request = re.split(r'\r\n|\\r\\n', request_str)[2:-1:2]
+        print(f'parser_request: {parse_request}')
     else: # e.g: ping 
         parse_request = [request_str]
-    print(parse_request)
+
+    print(f'parser_request: {parse_request}')
+
     return parse_request
         
+cache = {}
 
 def parse_command(parser_request)-> bytes:
-     print(f'parser_request: {parser_request}')
+    
+
+     if not parser_request:
+        return b'+No\r\n'
 
      if "ping" in parser_request[0].lower():
          return b'+PONG\r\n'
      # *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
      if "echo" in parser_request[0].lower():
          return f'+{parser_request[1]}\r\n'.encode()
+    # e.g: SET foo bar
+    # *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+
+     if 'set' in parser_request[0].lower():
+         cache[parser_request[1]] = parser_request[2]
+         return b'+OK\r\n'
+     
+     # e.g: get foo  => bar
+     if 'get' in parser_request[0].lower():
+         res = cache[parser_request[1]]
+         return f'+{res}\r\n'.encode()
 
 
 
