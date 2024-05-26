@@ -2,6 +2,7 @@
 import socket
 import threading
 import re
+import time
 
 
 def handle_connection(client_socket):
@@ -32,7 +33,8 @@ def parse_request(request) ->list:
 
     return parse_request
         
-cache = {}
+cache_dict = {}
+expire_time_dict ={}
 
 def parse_command(parser_request)-> bytes:
     
@@ -49,12 +51,31 @@ def parse_command(parser_request)-> bytes:
     # *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
 
      if 'set' in parser_request[0].lower():
-         cache[parser_request[1]] = parser_request[2]
+         key_name = parser_request[1]
+         value = parser_request[2]
+         cache_dict[key_name] = value
+
+         if len(parser_request) > 4 and 'px' in parser_request[3]:
+            expire_time = parser_request[4]
+            current_time_ms = int(time.time() * 1000)
+            expire_time_dict[key_name] = current_time_ms + int(expire_time)
+
          return b'+OK\r\n'
      
      # e.g: get foo  => bar
      if 'get' in parser_request[0].lower():
-         res = cache[parser_request[1]]
+         key_name = parser_request[1]
+
+         # if expire
+         if key_name in expire_time_dict:
+            expire_time = expire_time_dict[key_name]
+            current_time_ms = int(time.time() * 1000)
+            print(f'expire_time:{expire_time}')
+            print(f'current_time_ms:{current_time_ms}')
+            if(current_time_ms>expire_time):
+                return f'$-1\r\n'.encode()
+            
+         res = cache_dict[key_name]
          return f'+{res}\r\n'.encode()
 
 
