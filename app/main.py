@@ -6,7 +6,7 @@ import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-parser.add_argument("--port", type=int, default=6379)
+parser.add_argument("--port", type=int, default=6380)
 parser.add_argument("--replicaof", type=str, default='')
 parser.add_argument("--local", type=str, default='False')
 
@@ -52,7 +52,9 @@ def parse_request(request) ->list:
     print(f'parser_request: {parse_request}')
 
     return parse_request
-        
+
+replicaof = parser.parse_args().replicaof
+role = "master" if not replicaof else "slave"  
 cache_dict = {}
 expire_time_dict ={}
 replicas = []
@@ -75,11 +77,13 @@ def parse_command(client_socket, parser_request) -> bytes:
             expire_time = parser_request[4]
             current_time_ms = int(time.time() * 1000)
             expire_time_dict[key_name] = current_time_ms + int(expire_time)
-        if not parser.parse_args().replicaof:    
-            for rep in replicas:
-                rep.sendall(to_redis_protocol(f"SET {key_name} {value}").encode())
 
-        response = b'+OK\r\n'
+        if role == 'master':  # master
+            for rep in replicas:
+                try:
+                    rep.send(to_redis_protocol(f"SET {key_name} {value}").encode())
+                except Exception as e:
+                    print(f"Failed to send to replica: {e}")
         
     elif 'get' in parser_request[0].lower():
         key_name = parser_request[1]
@@ -98,8 +102,7 @@ def parse_command(client_socket, parser_request) -> bytes:
             res = cache_dict[key_name]
             response = f'+{res}\r\n'.encode()
     elif 'info' in parser_request[0].lower():
-        replicaof = parser.parse_args().replicaof
-        role = "master" if not replicaof else "slave"
+
         res = f'role:{role}\n'
         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
         res += 'master_repl_offset:0'
@@ -127,34 +130,34 @@ def parse_command(client_socket, parser_request) -> bytes:
 
 def connect_to_master() -> None:
     host , port = parser.parse_args().replicaof.split(' ')
-    master_socket = socket.create_connection((host, port))
+    replica_to_master_socket = socket.create_connection((host, port))
     try:
-        master_socket.send(to_redis_protocol('ping').encode())
-        response = master_socket.recv(1024)
+        replica_to_master_socket.send(to_redis_protocol('ping').encode())
+        response = replica_to_master_socket.recv(1024)
         print(f"[handshake(1/3)] Successfully connected to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
         print(f"fail: {e}")
 
     try:
-        master_socket.send(to_redis_protocol(f'REPLCONF listening-port 6380').encode())
-        response = master_socket.recv(1024)
+        replica_to_master_socket.send(to_redis_protocol(f'REPLCONF listening-port 6380').encode())
+        response = replica_to_master_socket.recv(1024)
         print(f"[handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
         print(f"fail: {e}")
 
     try:
-        master_socket.send(to_redis_protocol('REPLCONF capa psync').encode())
-        response = master_socket.recv(1024)
+        replica_to_master_socket.send(to_redis_protocol('REPLCONF capa psync').encode())
+        response = replica_to_master_socket.recv(1024)
         print(f"[handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
         print(f"fail: {e}")
 
     try:
-        master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
-        response = master_socket.recv(1024)
+        replica_to_master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
+        response = replica_to_master_socket.recv(1024)
         print(f"[handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
 
 
@@ -165,11 +168,13 @@ def connect_to_master() -> None:
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     port = parser.parse_args().port
-    if parser.parse_args().replicaof:
-        connect_to_master()
 
     print(f"Redis server is ready to connect to port: {port}!")
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
+
+    if parser.parse_args().replicaof:
+        connect_to_master()
+
 
     # Uncomment this to pass the first stage
     while True:
