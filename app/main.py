@@ -126,26 +126,34 @@ def connect_to_master() -> None:
     try:
         master_socket.send(to_redis_protocol('ping').encode())
         response = master_socket.recv(1024)
-        print(f"成功连接到主服务器 {host}:{port}, 响应: {response}")
+        print(f"[handshake(1/3)] Successfully connected to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
-        print(f"无法连接到主服务器: {e}")
+        print(f"fail: {e}")
 
     try:
         master_socket.send(to_redis_protocol(f'REPLCONF listening-port 6380').encode())
         response = master_socket.recv(1024)
-        print(f"成功连接到主服务器 {host}:{port}, 响应: {response}")
+        print(f"[handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
-        print(f"无法连接到主服务器: {e}")
+        print(f"fail: {e}")
 
     try:
         master_socket.send(to_redis_protocol('REPLCONF capa psync').encode())
         response = master_socket.recv(1024)
-        print(f"成功连接到主服务器 {host}:{port}, 响应: {response}")
+        print(f"[handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
-        print(f"无法连接到主服务器: {e}")
+        print(f"fail: {e}")
+
+    try:
+        master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
+        response = master_socket.recv(1024)
+        print(f"[handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
+        # 在这里可以添加更多的逻辑来处理与主服务器的通信
+    except Exception as e:
+        print(f"fail: {e}")
 
 
 def main():
