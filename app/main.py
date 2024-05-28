@@ -3,6 +3,7 @@ import socket
 import threading
 import re
 import time
+from argparse import ArgumentParser
 
 
 def handle_connection(client_socket):
@@ -37,7 +38,6 @@ cache_dict = {}
 expire_time_dict ={}
 
 def parse_command(parser_request)-> bytes:
-    
 
      if not parser_request:
         return b'+No\r\n'
@@ -83,7 +83,11 @@ def parse_command(parser_request)-> bytes:
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
-    server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
+    parser = ArgumentParser()
+    parser.add_argument("--port", type=int, default=6379)
+    port = parser.parse_args().port
+
+    server_socket = socket.create_server(("localhost", port), reuse_port=True)
 
     # Uncomment this to pass the first stage
     while True:
