@@ -119,6 +119,10 @@ def parse_command(parser_request)-> bytes:
      
      if 'replconf' in parser_request[0].lower():
          return f'+OK\r\n'.encode()
+     
+     if 'psync' in parser_request[0].lower():
+         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
+         return f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
     
      return b'+No\r\n'
 
