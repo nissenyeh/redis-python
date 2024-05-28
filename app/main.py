@@ -29,8 +29,7 @@ def handle_connection(client_socket):
             break;
         print(f'http_request: {request}')
         parser_request: list =  parse_request(request)
-        response = parse_command(parser_request)
-        client_socket.send(response)
+        parse_command(client_socket, parser_request)
 
 def parse_request(request) ->list:
     request_str: str = request.decode()
@@ -56,76 +55,77 @@ def parse_request(request) ->list:
         
 cache_dict = {}
 expire_time_dict ={}
+replicas = []
 
-def parse_command(parser_request)-> bytes:
+def parse_command(client_socket, parser_request) -> bytes:
+    response = b'+No\r\n'
 
-     if not parser_request:
-        return b'+No\r\n'
-     # *1\r\n$4\r\nPING\r\n
-     if "ping" in parser_request[0].lower():
-         return b'+PONG\r\n'
-     # *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
-     if "echo" in parser_request[0].lower():
-         return f'+{parser_request[1]}\r\n'.encode()
-    # e.g: SET foo bar
-    # *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+    if not parser_request:
+        response = b'+No\r\n'
+    elif "ping" in parser_request[0].lower():
+        response = b'+PONG\r\n'
+    elif "echo" in parser_request[0].lower():
+        response = f'+{parser_request[1]}\r\n'.encode()
+    elif 'set' in parser_request[0].lower():
+        key_name = parser_request[1]
+        value = parser_request[2]
+        cache_dict[key_name] = value
 
-     if 'set' in parser_request[0].lower():
-         key_name = parser_request[1]
-         value = parser_request[2]
-         cache_dict[key_name] = value
-
-         if len(parser_request) > 4 and 'px' in parser_request[3]:
+        if len(parser_request) > 4 and 'px' in parser_request[3]:
             expire_time = parser_request[4]
             current_time_ms = int(time.time() * 1000)
             expire_time_dict[key_name] = current_time_ms + int(expire_time)
+        if not parser.parse_args().replicaof:    
+            for rep in replicas:
+                rep.sendall(to_redis_protocol(f"SET {key_name} {value}").encode())
 
-         return b'+OK\r\n'
-     
-     # e.g: get foo  => bar
-     if 'get' in parser_request[0].lower():
-         key_name = parser_request[1]
+        response = b'+OK\r\n'
+        
+    elif 'get' in parser_request[0].lower():
+        key_name = parser_request[1]
 
-         # if expire
-         if key_name in expire_time_dict:
+        if key_name in expire_time_dict:
             expire_time = expire_time_dict[key_name]
             current_time_ms = int(time.time() * 1000)
             print(f'expire_time:{expire_time}')
             print(f'current_time_ms:{current_time_ms}')
-            if(current_time_ms>expire_time):
-                return f'$-1\r\n'.encode()
-            
-         res = cache_dict[key_name]
-         return f'+{res}\r\n'.encode()
-    # $ redis-cli INFO replication
-    # # Replication
-    # role:master
-    # connected_slaves:0
-    # master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb
-    # master_repl_offset:0
-    # second_repl_offset:-1
-    # repl_backlog_active:0
-    # repl_backlog_size:1048576
-    # repl_backlog_first_byte_offset:0
-    # repl_backlog_histlen:
-     if 'info' in parser_request[0].lower():
-         replicaof = parser.parse_args().replicaof
+            if current_time_ms > expire_time:
+                response = f'$-1\r\n'.encode()
+            else:
+                res = cache_dict[key_name]
+                response = f'+{res}\r\n'.encode()
+        else:
+            res = cache_dict[key_name]
+            response = f'+{res}\r\n'.encode()
+    elif 'info' in parser_request[0].lower():
+        replicaof = parser.parse_args().replicaof
+        role = "master" if not replicaof else "slave"
+        res = f'role:{role}\n'
+        res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
+        res += 'master_repl_offset:0'
+        response = f'+{res}\r\n'.encode()
 
-         role = "master" if not replicaof else "slave"
-         res = f'role:{role}\n'
-         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
-         res += 'master_repl_offset:0'
-         return f'+{res}\r\n'.encode()
-     
-     if 'replconf' in parser_request[0].lower():
-         return f'+OK\r\n'.encode()
-     
-     if 'psync' in parser_request[0].lower():
-         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
-         return f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
-    
-     return b'+No\r\n'
+    # Connect by Replica
+    elif 'replconf' in parser_request[0].lower():
+        response = f'+OK\r\n'.encode()
+    elif 'psync' in parser_request[0].lower():
+        REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
+        response = f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
+        client_socket.send(response)
+        # client_response = client_socket.recv(1024)
+        # print(f"Client response: {client_response}")
+        rdb_hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
+        rdb_content = bytes.fromhex(rdb_hex)
+        rdb_length = len(rdb_content)
+        print(f"${rdb_length}\r\n".encode()+rdb_content)
+        # First send the length of the file
+        client_socket.send(f"${rdb_length}\r\n".encode()+rdb_content)
+        # Then send the actual binary content of the file
 
+        replicas.append(client_socket)
+        return 
+
+    client_socket.send(response)
 
 def connect_to_master() -> None:
     host , port = parser.parse_args().replicaof.split(' ')
@@ -158,7 +158,8 @@ def connect_to_master() -> None:
         master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
         response = master_socket.recv(1024)
         print(f"[handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
-        # 在这里可以添加更多的逻辑来处理与主服务器的通信
+
+
     except Exception as e:
         print(f"fail: {e}")
 
@@ -168,8 +169,9 @@ def main():
     port = parser.parse_args().port
     if parser.parse_args().replicaof:
         connect_to_master()
+
+    print(f"Redis server is ready to connect to port: {port}!")
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
-    print(f"Redis server is running in port: {port}!")
 
     # Uncomment this to pass the first stage
     while True:
