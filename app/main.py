@@ -116,6 +116,9 @@ def parse_command(parser_request)-> bytes:
          res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
          res += 'master_repl_offset:0'
          return f'+{res}\r\n'.encode()
+     
+     if 'replconf' in parser_request[0].lower():
+         return f'+OK\r\n'.encode()
     
      return b'+No\r\n'
 
