@@ -12,7 +12,6 @@ parser.add_argument("--local", type=str, default='False')
 
 
 
-
 # ping 
 def to_redis_protocol(command: str) -> str:
     parts = command.split()
@@ -111,6 +110,7 @@ def parse_command(parser_request)-> bytes:
     # repl_backlog_histlen:
      if 'info' in parser_request[0].lower():
          replicaof = parser.parse_args().replicaof
+
          role = "master" if not replicaof else "slave"
          res = f'role:{role}\n'
          res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
@@ -120,14 +120,26 @@ def parse_command(parser_request)-> bytes:
      return b'+No\r\n'
 
 
+def connect_to_master() -> None:
+    host , port = parser.parse_args().replicaof.split(' ')
+    try:
+        master_socket = socket.create_connection((host, port))
+        master_socket.send(to_redis_protocol('ping').encode())
+        print(f"成功连接到主服务器 {host}:{port}")
+        # 在这里可以添加更多的逻辑来处理与主服务器的通信
+    except Exception as e:
+        print(f"无法连接到主服务器: {e}")
+
+
+
 
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     port = parser.parse_args().port
-
+    if parser.parse_args().replicaof:
+        connect_to_master()
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
     print(f"Redis server is running in port: {port}!")
-    print('cool')
 
     # Uncomment this to pass the first stage
     while True:
