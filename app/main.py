@@ -118,10 +118,8 @@ def parse_command(client_socket, parser_request) -> bytes:
         rdb_content = bytes.fromhex(rdb_hex)
         rdb_length = len(rdb_content)
         print(f"${rdb_length}\r\n".encode()+rdb_content)
-        # First send the length of the file
         client_socket.send(f"${rdb_length}\r\n".encode()+rdb_content)
-        # Then send the actual binary content of the file
-
+        
         replicas.append(client_socket)
         return 
 
