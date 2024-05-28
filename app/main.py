@@ -112,7 +112,9 @@ def parse_command(parser_request)-> bytes:
      if 'info' in parser_request[0].lower():
          replicaof = parser.parse_args().replicaof
          role = "master" if not replicaof else "slave"
-         res = f'role:{role}'
+         res = f'role:{role}\n'
+         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
+         res += 'master_repl_offset:0'
          return f'+{res}\r\n'.encode()
     
      return b'+No\r\n'
