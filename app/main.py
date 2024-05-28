@@ -14,14 +14,14 @@ def to_redis_protocol(command: str) -> str:
     return proto
 
 
-def handle_connection(client_socket):
+def handle_connection(client_socket, role):
     while True:
         request: bytes = client_socket.recv(1024) # 獲取客戶端發送的訊息
         if not request:
             break;
         print(f'http_request: {request}')
         parser_request: list =  parse_request(request)
-        response = parse_command(parser_request)
+        response = parse_command(parser_request, role)
         client_socket.send(response)
 
 def parse_request(request) ->list:
@@ -30,7 +30,7 @@ def parse_request(request) ->list:
     parse_request: list = []
 
     # run only in local 
-    # request_str = to_redis_protocol(request_str)
+    request_str = to_redis_protocol(request_str)
     
     # e.g: *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
     # ['*2', '$4', 'ECHO', '$3', 'hey', '']
@@ -48,7 +48,7 @@ def parse_request(request) ->list:
 cache_dict = {}
 expire_time_dict ={}
 
-def parse_command(parser_request)-> bytes:
+def parse_command(parser_request, role)-> bytes:
 
      if not parser_request:
         return b'+No\r\n'
@@ -100,25 +100,31 @@ def parse_command(parser_request)-> bytes:
     # repl_backlog_first_byte_offset:0
     # repl_backlog_histlen:
      if 'info' in parser_request[0].lower():
-         res = 'role:master'
+         res = f'role:{role}'
          return f'+{res}\r\n'.encode()
+    
+     return b'+No\r\n'
 
 
 
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!")
     parser = ArgumentParser()
     parser.add_argument("--port", type=int, default=6379)
+    parser.add_argument("--replicaof", type=str, default='')
     port = parser.parse_args().port
+    replicaof = parser.parse_args().replicaof
 
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
+    print(f"Redis server is running in port: {port}!")
+    print('cool')
+    role = "master" if not replicaof else "slave"
 
     # Uncomment this to pass the first stage
     while True:
         client_socket, _ = server_socket.accept() # 等待客戶端連接
         threading.Thread(
-            target=handle_connection, args=[client_socket]
+            target=handle_connection, args=[client_socket, role]
         ).start()
 
 
