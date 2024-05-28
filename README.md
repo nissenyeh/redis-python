@@ -63,6 +63,10 @@ value in `codecrafters.yml`.
 ## testing in local
 
 ```
+python watcher.py
+```
+
+```
 telnet localhost 6379
 ```
 
