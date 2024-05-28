@@ -39,7 +39,7 @@ def parse_request(request) ->list:
     parse_request: list = []
 
     # run only in local 
-    if  bool(parser.parse_args().local):
+    if parser.parse_args().local == 'True':
         request_str = to_redis_protocol(request_str)
     
     # e.g: *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
