@@ -20,7 +20,7 @@ class ChangeHandler(FileSystemEventHandler):
     def start_script(self):
         if self.process:
             self.process.terminate()
-        self.process = subprocess.Popen(['sh', self.script, '--port', str(port), '--replicaof', replicaof])
+        self.process = subprocess.Popen(['sh', self.script, '--local', str(True) ,'--port', str(port), '--replicaof', replicaof])
 
     def on_modified(self, event):
         if event.src_path.endswith('app/main.py'):
