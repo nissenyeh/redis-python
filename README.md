@@ -59,3 +59,23 @@ You can fix this by installing Python 3.8 locally and using that.
 
 If you'd like to use a different version of Python, change the `language_pack`
 value in `codecrafters.yml`.
+
+## testing in local
+
+```
+telnet localhost 6379
+```
+
+``` 
+def to_redis_protocol(command: str) -> str:
+    parts = command.split()
+    proto = f"*{len(parts)}\r\n"
+    for part in parts:
+        proto += f"${len(part)}\r\n{part}\r\n"
+    return proto
+```
+
+```
+PING *1\r\n$4\r\nPING\r\n
+ECHO *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
+```

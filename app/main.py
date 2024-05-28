@@ -5,28 +5,39 @@ import re
 import time
 from argparse import ArgumentParser
 
+# ping 
+def to_redis_protocol(command: str) -> str:
+    parts = command.split()
+    proto = f"*{len(parts)}\r\n"
+    for part in parts:
+        proto += f"${len(part)}\r\n{part}\r\n"
+    return proto
+
 
 def handle_connection(client_socket):
     while True:
         request: bytes = client_socket.recv(1024) # 獲取客戶端發送的訊息
         if not request:
             break;
-        print(f'request: {request}')
+        print(f'http_request: {request}')
         parser_request: list =  parse_request(request)
         response = parse_command(parser_request)
         client_socket.send(response)
 
 def parse_request(request) ->list:
     request_str: str = request.decode()
+    print(f'http_request_decode: {request_str}')
     parse_request: list = []
-    print(f'request_str: {request_str}')
+
+    # run only in local 
+    # request_str = to_redis_protocol(request_str)
+    
     # e.g: *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
     # ['*2', '$4', 'ECHO', '$3', 'hey', '']
     # e.g: *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
     # ['*3', 'SET', '3', 'bar', '']
     if '\r\n' in request_str:
         parse_request = re.split(r'\r\n|\\r\\n', request_str)[2:-1:2]
-        print(f'parser_request: {parse_request}')
     else: # e.g: ping 
         parse_request = [request_str]
 
@@ -41,7 +52,7 @@ def parse_command(parser_request)-> bytes:
 
      if not parser_request:
         return b'+No\r\n'
-
+     # *1\r\n$4\r\nPING\r\n
      if "ping" in parser_request[0].lower():
          return b'+PONG\r\n'
      # *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
@@ -76,6 +87,20 @@ def parse_command(parser_request)-> bytes:
                 return f'$-1\r\n'.encode()
             
          res = cache_dict[key_name]
+         return f'+{res}\r\n'.encode()
+    # $ redis-cli INFO replication
+    # # Replication
+    # role:master
+    # connected_slaves:0
+    # master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb
+    # master_repl_offset:0
+    # second_repl_offset:-1
+    # repl_backlog_active:0
+    # repl_backlog_size:1048576
+    # repl_backlog_first_byte_offset:0
+    # repl_backlog_histlen:
+     if 'info' in parser_request[0].lower():
+         res = 'role:master'
          return f'+{res}\r\n'.encode()
 
 
