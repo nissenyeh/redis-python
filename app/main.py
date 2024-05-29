@@ -32,7 +32,7 @@ def handle_connection(client_socket):
         parse_command(client_socket, parser_request)
 
 def parse_request(request) ->list:
-    request_str: str = request.decode()
+    request_str: str = request.decode(errors='ignore')
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - http_request_decode: {request_str}")
     parse_request: list = []
 
@@ -54,6 +54,7 @@ def parse_request(request) ->list:
     return parse_request
 
 replicaof = parser.parse_args().replicaof
+
 role = "slave" if replicaof else "master"  
 cache_dict = {}
 expire_time_dict ={}
@@ -159,15 +160,17 @@ def connect_to_master() -> None:
         replica_to_master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
         response = replica_to_master_socket.recv(1024)
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
+        handle_connection(replica_to_master_socket)
 
     except Exception as e:
         print(f"fail: {e}")
 
 import time
 
+
+
 def start_server():
     port = parser.parse_args().port
-
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Redis server is running at port: {port}!")
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
 
@@ -175,12 +178,12 @@ def start_server():
         thread = threading.Thread(target=connect_to_master)
         thread.start()
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Starting thread {thread.name} for connect_to_master")
-
+    
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Entering the main loop to accept connections...")
     while True:
         try:
-            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  {port} is ready to accept a new connection")
             client_socket, _ = server_socket.accept()  # 等待客戶端連接
+            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  {port} is ready to accept a new connection")
             thread =  threading.Thread(
                 target=handle_connection, args=[client_socket]
             )
@@ -188,6 +191,7 @@ def start_server():
             print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Starting thread {thread.name} for start listening to connection")
         except Exception as e:
             print(f"Error accepting connection: {e}")
+
 
 
 if __name__ == "__main__":
