@@ -165,7 +165,6 @@ def connect_to_master() -> None:
 
 
 def start_server():
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
     port = parser.parse_args().port
 
     print(f"Redis server is ready to connect to port: {port}!")
