@@ -54,7 +54,7 @@ def parse_request(request) ->list:
     return parse_request
 
 replicaof = parser.parse_args().replicaof
-role = "master" if not replicaof else "slave"  
+role = "slave" if replicaof else "master"  
 cache_dict = {}
 expire_time_dict ={}
 replicas = []
@@ -160,29 +160,30 @@ def connect_to_master() -> None:
         response = replica_to_master_socket.recv(1024)
         print(f"[handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
 
-
     except Exception as e:
         print(f"fail: {e}")
 
 
-def main():
+def start_server():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     port = parser.parse_args().port
 
     print(f"Redis server is ready to connect to port: {port}!")
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
 
-    if parser.parse_args().replicaof:
-        connect_to_master()
-
+    if role == 'slave':
+        threading.Thread(target=connect_to_master).start()
 
     # Uncomment this to pass the first stage
     while True:
-        client_socket, _ = server_socket.accept() # 等待客戶端連接
-        threading.Thread(
-            target=handle_connection, args=[client_socket]
-        ).start()
+        try:
+            client_socket, _ = server_socket.accept()  # 等待客戶端連接
+            threading.Thread(
+                target=handle_connection, args=[client_socket]
+            ).start()
+        except Exception as e:
+            print(f"Error accepting connection: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    start_server()
