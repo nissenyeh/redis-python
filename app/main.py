@@ -164,6 +164,7 @@ def connect_to_master() -> None:
         print(f"fail: {e}")
 
 
+
 def start_server():
     port = parser.parse_args().port
 
@@ -171,15 +172,20 @@ def start_server():
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
 
     if role == 'slave':
-        threading.Thread(target=connect_to_master).start()
+        thread = threading.Thread(target=connect_to_master)
+        thread.start()
+        print(f"Starting thread {thread.name} for connect_to_master")
 
-    # Uncomment this to pass the first stage
+    print("Entering the main loop to accept connections...")
     while True:
         try:
+            print("Ready to accept connections...")
             client_socket, _ = server_socket.accept()  # 等待客戶端連接
-            threading.Thread(
+            thread =  threading.Thread(
                 target=handle_connection, args=[client_socket]
-            ).start()
+            )
+            thread.start()
+            print(f"Starting thread {thread.name} for start listening to connection")
         except Exception as e:
             print(f"Error accepting connection: {e}")
 
