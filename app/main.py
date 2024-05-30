@@ -156,6 +156,7 @@ def parse_command(client_socket, request, parser_request) -> bytes:
             print('==== start to record offset ====')
         
 
+    # Send RDB file to create A replica
     elif 'psync' in parser_request[0].lower():
         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
         response = f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
@@ -167,16 +168,11 @@ def parse_command(client_socket, request, parser_request) -> bytes:
         rdb_length = len(rdb_content)
         print(f"${rdb_length}\r\n".encode()+rdb_content)
         client_socket.send(f"${rdb_length}\r\n".encode()+rdb_content)
-        
         replicas.append(client_socket)
         return 
     
-    elif (
-        parser_request[0].lower() == 'wait' and
-        parser_request[1] == '0' and
-        parser_request[2] == '60000'
-    ):
-        response = b':0\r\n'
+    elif parser_request[0].lower() == 'wait':
+        response = f':{len(replicas)}\r\n'.encode()
     
 
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - client_socket.send: {response} ")
