@@ -35,11 +35,8 @@ def handle_connection(client_socket):
             parser_requests: list = parse_request(request)
             for parser_request in parser_requests:
                 print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  redis command running: {parser_request}")
-                parse_command(client_socket, request, parser_request)
-
+                parse_command(client_socket, parser_request)
                 
-        # parser_request: list =  parse_request(request)
-        # parse_command(client_socket, parser_request)
         except Exception as e:
             print(f"An error occurred: {e}")
 
@@ -83,8 +80,9 @@ role = "slave" if replicaof else "master"
 cache_dict = {}
 expire_time_dict ={}
 replicas = []
+updated_replicas = []
 
-def parse_command(client_socket, request, parser_request) -> bytes:
+def parse_command(client_socket, parser_request) -> bytes:
     global offset
     global start_record_offset
 
@@ -117,6 +115,8 @@ def parse_command(client_socket, request, parser_request) -> bytes:
             for rep in replicas:
                 try:
                     rep.send(to_redis_protocol(f"SET {key_name} {value}").encode())
+                    updated_replicas.append(rep)
+                    rep.send(to_redis_protocol('REPLCONF GETACK *').encode())
                 except Exception as e:
                     print(f"Failed to send to replica: {e}")
         if role == 'slave':
@@ -150,7 +150,8 @@ def parse_command(client_socket, request, parser_request) -> bytes:
     elif 'replconf' in parser_request[0].lower():
         if role == 'master':
             response = f'+OK\r\n'.encode()
-        if role == 'slave' and 'getack' in parser_request[1].lower():
+        if role == 'slave':
+            print(f'send REPLCONF ACK {offset}\r\n')
             response = to_redis_protocol(f'REPLCONF ACK {offset}\r\n').encode()  
             start_record_offset = True
             print('==== start to record offset ====')
@@ -161,19 +162,26 @@ def parse_command(client_socket, request, parser_request) -> bytes:
         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
         response = f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
         client_socket.send(response)
-        # client_response = client_socket.recv(1024)
-        # print(f"Client response: {client_response}")
         rdb_hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
         rdb_content = bytes.fromhex(rdb_hex)
         rdb_length = len(rdb_content)
         print(f"${rdb_length}\r\n".encode()+rdb_content)
         client_socket.send(f"${rdb_length}\r\n".encode()+rdb_content)
         replicas.append(client_socket)
+        # time.sleep(1)  # 延遲 1 秒
         return 
     
-    elif parser_request[0].lower() == 'wait':
-        response = f':{len(replicas)}\r\n'.encode()
-    
+    # WAIT 1 500
+    elif 'wait' in parser_request[0].lower():
+        num_replicas = int(parser_request[1])
+        timeout = int(parser_request[2]) / 1000  # Convert to seconds
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if len(updated_replicas) >= num_replicas:
+                break
+            time.sleep(0.01)  # Sleep for 10ms to avoid busy waiting
+        print(len(updated_replicas))
+        response = f':{len(num_replicas)}\r\n'.encode()
 
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - client_socket.send: {response} ")
     client_socket.send(response)
