@@ -6,7 +6,7 @@ import time
 from argparse import ArgumentParser
 
 parser = ArgumentParser()
-parser.add_argument("--port", type=int, default=6380)
+parser.add_argument("--port", type=int, default=6379)
 parser.add_argument("--replicaof", type=str, default='')
 parser.add_argument("--local", type=str, default='False')
 
@@ -24,17 +24,25 @@ def to_redis_protocol(command: str) -> str:
 def handle_connection(client_socket):
     
     while True:
-        request: bytes = client_socket.recv(1024) # 獲取客戶端發送的訊息
-        if not request:
-            break;
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  redis server get a request: {request}")
-        parser_request: list =  parse_request(request)
-        parse_command(client_socket, parser_request)
+        try: 
+            request: bytes = client_socket.recv(1024) # 獲取客戶端發送的訊息
+            if not request:
+                break;
+            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  redis server get a request: {request}")
+            parser_requests: list = parse_request(request)
+            for parser_request in parser_requests:
+                print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  redis command running: {parser_request}")
+                parse_command(client_socket, parser_request)        
+        # parser_request: list =  parse_request(request)
+        # parse_command(client_socket, parser_request)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
 
 def parse_request(request) ->list:
     request_str: str = request.decode(errors='ignore')
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - http_request_decode: {request_str}")
-    parse_request: list = []
+    parse_requests: list = []
 
     # run only in local 
     if parser.parse_args().local == 'True':
@@ -44,14 +52,24 @@ def parse_request(request) ->list:
     # ['*2', '$4', 'ECHO', '$3', 'hey', '']
     # e.g: *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
     # ['*3', 'SET', '3', 'bar', '']
-    if '\r\n' in request_str:
-        parse_request = re.split(r'\r\n|\\r\\n', request_str)[2:-1:2]
-    else: # e.g: ping 
-        parse_request = [request_str]
+    # if '\r\n' in request_str:
+    #     parse_request = re.split(r'\r\n|\\r\\n', request_str)[2:-1:2]
+    # else: # e.g: ping 
+    #     parse_request = [request_str]
 
-    print(f'parser_request: {parse_request}')
+    commands = request_str.split('*')
+    for command in commands:
+        if command:
+            command = '*' + command  # 恢复分割时丢失的 '*'
+            if '\r\n' in command:
+                parsed_command = re.split(r'\r\n|\\r\\n', command)[2:-1:2]
+            else:  # e.g: ping 
+                parsed_command = [command]
+            parse_requests.append(parsed_command)
 
-    return parse_request
+    print(f'parser_request: {parse_requests}')
+
+    return parse_requests
 
 replicaof = parser.parse_args().replicaof
 
@@ -73,6 +91,7 @@ def parse_command(client_socket, parser_request) -> bytes:
         key_name = parser_request[1]
         value = parser_request[2]
         cache_dict[key_name] = value
+        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  set key: ${key_name} -  value: {value}")
 
         if len(parser_request) > 4 and 'px' in parser_request[3]:
             expire_time = parser_request[4]
@@ -80,6 +99,7 @@ def parse_command(client_socket, parser_request) -> bytes:
             expire_time_dict[key_name] = current_time_ms + int(expire_time)
 
         if role == 'master':  # master
+            response = f'+OK\r\n'.encode()
             for rep in replicas:
                 try:
                     rep.send(to_redis_protocol(f"SET {key_name} {value}").encode())
@@ -102,8 +122,8 @@ def parse_command(client_socket, parser_request) -> bytes:
         else:
             res = cache_dict[key_name]
             response = f'+{res}\r\n'.encode()
-    elif 'info' in parser_request[0].lower():
 
+    elif 'info' in parser_request[0].lower():
         res = f'role:{role}\n'
         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
         res += 'master_repl_offset:0'
@@ -145,13 +165,14 @@ def connect_to_master() -> None:
         response = replica_to_master_socket.recv(1024)
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
+
     except Exception as e:
         print(f"fail: {e}")
 
     try:
         replica_to_master_socket.send(to_redis_protocol('REPLCONF capa psync').encode())
-        response = replica_to_master_socket.recv(1024)
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
+        # response = replica_to_master_socket.recv(1024)
+        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(3/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
     except Exception as e:
         print(f"fail: {e}")
@@ -159,8 +180,12 @@ def connect_to_master() -> None:
     try:
         replica_to_master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
         response = replica_to_master_socket.recv(1024)
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
-        handle_connection(replica_to_master_socket)
+        thread =  threading.Thread(
+            target=handle_connection, args=[replica_to_master_socket]
+        )
+        thread.start()
+        # print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(3/3)] Successfully send 'PSYNC' to the master server {host}:{port}, response: {response}")
+        # handle_connection(replica_to_master_socket)
 
     except Exception as e:
         print(f"fail: {e}")
@@ -171,14 +196,15 @@ import time
 
 def start_server():
     port = parser.parse_args().port
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Redis server is running at port: {port}!")
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Redis {role} server is running at port: {port}!")
     server_socket = socket.create_server(("localhost", port), reuse_port=True)
+
 
     if role == 'slave':
         thread = threading.Thread(target=connect_to_master)
         thread.start()
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Starting thread {thread.name} for connect_to_master")
-    
+
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Entering the main loop to accept connections...")
     while True:
         try:
