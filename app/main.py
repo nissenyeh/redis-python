@@ -171,6 +171,13 @@ def parse_command(client_socket, request, parser_request) -> bytes:
         replicas.append(client_socket)
         return 
     
+    elif (
+        parser_request[0].lower() == 'wait' and
+        parser_request[1] == '0' and
+        parser_request[2] == '60000'
+    ):
+        response = b':0\r\n'
+    
 
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - client_socket.send: {response} ")
     client_socket.send(response)
