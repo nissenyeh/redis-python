@@ -13,12 +13,22 @@ offset = 0
 start_record_offset = False
 
 # ping 
-def to_redis_protocol(command: str) -> str:
+# def to_redis_protocol(command: str) -> str:
+#     parts = command.split()
+#     proto = f"*{len(parts)}\r\n"
+#     for part in parts:
+#         proto += f"${len(part)}\r\n{part}\r\n"
+#     return proto
+
+def to_redis_protocol(command: str) -> str: # local
     parts = command.split()
+    if parts[0].lower() == 'replconf' or parts[0].lower() == 'psync':
+        return f"*{len(parts)}\r\n" + "\r\n".join(parts) + "\r\n"
     proto = f"*{len(parts)}\r\n"
     for part in parts:
         proto += f"${len(part)}\r\n{part}\r\n"
     return proto
+
 
 
 def handle_connection(client_socket):
@@ -70,6 +80,26 @@ def parse_request(request) ->list:
             if parsed_command:
                 parse_requests.append(parsed_command)
 
+    # commands = request_str.split('*') ## local 
+    # for command in commands:
+    #     if command:
+    #         command = '*' + command  # 恢复分割时丢失的 '*'
+    #         if '\r\n' in command:
+    #             parts = re.split(r'\r\n', command)
+    #             parsed_command = []
+    #             i = 1
+    #             while i < len(parts):
+    #                 if parts[i].startswith('$'):
+    #                     parsed_command.append(parts[i + 1])
+    #                     i += 2
+    #                 else:
+    #                     i += 1
+    #         else:  # e.g: ping 
+    #             parsed_command = [command]
+    #         if parsed_command:
+    #             parse_requests.append(parsed_command)
+
+
     print(f'parser_request: {parse_requests}')
 
     return parse_requests
@@ -86,18 +116,20 @@ def parse_command(client_socket, parser_request) -> bytes:
     global offset
     global start_record_offset
 
-    response = b'+No\r\n'
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - parser_request: {parser_request}")
     if not parser_request:
-        response = b'+No\r\n'
+        return 
+    
     elif "ping" in parser_request[0].lower():
         if role == 'master':
             response = b'+PONG\r\n'
+            client_socket.send(response)
         if role == 'slave':
             return
        
     elif "echo" in parser_request[0].lower():
         response = f'+{parser_request[1]}\r\n'.encode()
+        client_socket.send(response)
 
     elif 'set' in parser_request[0].lower():
         key_name = parser_request[1]
@@ -109,20 +141,39 @@ def parse_command(client_socket, parser_request) -> bytes:
             expire_time = parser_request[4]
             current_time_ms = int(time.time() * 1000)
             expire_time_dict[key_name] = current_time_ms + int(expire_time)
+
         print(f'role:{role}')
         if role == 'master':  # master
             response = f'+OK\r\n'.encode()
             for rep in replicas:
                 try:
-                    rep.send(to_redis_protocol(f"SET {key_name} {value}").encode())
+                    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  sync data to slave")
+
+                    if parser.parse_args().local == 'True':
+                        rep.send((f"SET {key_name} {value}").encode())
+                    else:
+                        rep.send(to_redis_protocol(f"SET {key_name} {value}").encode())
+
                     updated_replicas.append(rep)
-                    rep.send(to_redis_protocol('REPLCONF GETACK *').encode())
+                    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  REPLCONF GETACK")
+
+                    # rep.send(f'REPLCONF GETACK *').encode()
+
+                    if parser.parse_args().local == 'True':
+                        rep.send((f'REPLCONF GETACK *').encode())
+                    else:
+                        print(to_redis_protocol(f'REPLCONF GETACK *'))
+                        rep.send(to_redis_protocol(f'REPLCONF GETACK *').encode())
+
+                    # rep.send(to_redis_protocol(f'REPLCONF GETACK *').encode())
                 except Exception as e:
                     print(f"Failed to send to replica: {e}")
+            client_socket.send(response)
         if role == 'slave':
             return 
         
     elif 'get' in parser_request[0].lower():
+        response = ''
         key_name = parser_request[1]
 
         if key_name in expire_time_dict:
@@ -138,26 +189,30 @@ def parse_command(client_socket, parser_request) -> bytes:
         else:
             res = cache_dict[key_name]
             response = f'+{res}\r\n'.encode()
+        client_socket.send(response)
 
     elif 'info' in parser_request[0].lower():
         res = f'role:{role}\n'
         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
         res += 'master_repl_offset:0'
         response = f'+{res}\r\n'.encode()
+        client_socket.send(response)
 
 
     # Connect by Replica
     elif 'replconf' in parser_request[0].lower():
+        response = ''
         if role == 'master':
             response = f'+OK\r\n'.encode()
-        if role == 'slave':
+        if role == 'slave' and 'getack' in parser_request[1].lower():
             print(f'send REPLCONF ACK {offset}\r\n')
             response = to_redis_protocol(f'REPLCONF ACK {offset}\r\n').encode()  
             start_record_offset = True
             print('==== start to record offset ====')
+        client_socket.send(response)
         
 
-    # Send RDB file to create A replica
+    # Send RDB file to create A replica & Add to replicas
     elif 'psync' in parser_request[0].lower():
         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
         response = f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
@@ -169,7 +224,7 @@ def parse_command(client_socket, parser_request) -> bytes:
         client_socket.send(f"${rdb_length}\r\n".encode()+rdb_content)
         replicas.append(client_socket)
         # time.sleep(1)  # 延遲 1 秒
-        return 
+
     
     # WAIT 1 500
     elif 'wait' in parser_request[0].lower():
@@ -181,16 +236,20 @@ def parse_command(client_socket, parser_request) -> bytes:
                 break
             time.sleep(0.01)  # Sleep for 10ms to avoid busy waiting
         print(len(updated_replicas))
-        response = f':{len(num_replicas)}\r\n'.encode()
+        response = f':{num_replicas}\r\n'.encode()
+        client_socket.send(response)
 
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - client_socket.send: {response} ")
-    client_socket.send(response)
+
+    
 
 def connect_to_master() -> None:
     host , port = parser.parse_args().replicaof.split(' ')
     replica_to_master_socket = socket.create_connection((host, port))
     try:
-        replica_to_master_socket.send(to_redis_protocol('ping').encode())
+        if parser.parse_args().local == 'True':
+            replica_to_master_socket.send(b'+PING\r\n') # local
+        else:
+            replica_to_master_socket.send(to_redis_protocol('PING').encode())
         response = replica_to_master_socket.recv(1024)
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(1/3)] Successfully connected to the master server {host}:{port}, response: {response}")
         # 在这里可以添加更多的逻辑来处理与主服务器的通信
