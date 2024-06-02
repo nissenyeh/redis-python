@@ -5,31 +5,33 @@ import re
 import time
 from argparse import ArgumentParser
 
+from app.parser import redis_protocol_encoder, redis_protocol_parser
+from app.command_handler import handle_echo, handel_ping, handle_config
 
-def redis_protocol(type , input) -> str: # local
-  if type == 'str':
-    symbol = '+'
-    return f"{symbol}{input}\r\n"
+# def redis_protocol_encoder(type , input) -> str: # local
+#   if type == 'str':
+#     symbol = '+'
+#     return f"{symbol}{input}\r\n"
 
-  if type == 'int':
-    symbol = ':'
-    return f"{symbol}{input}\r\n"
+#   if type == 'int':
+#     symbol = ':'
+#     return f"{symbol}{input}\r\n"
   
-  if type == 'bulk':
-    symbol = '$'
-    res = str(len(input)) + "\r\n" + input + "\r\n"
-    return f"{symbol}{res}"
+#   if type == 'bulk':
+#     symbol = '$'
+#     res = str(len(input)) + "\r\n" + input + "\r\n"
+#     return f"{symbol}{res}"
   
-  if type == 'array' and len(input) > 1:
-    symbol = '*'
-    res = f"{len(input)}\r\n"
-    for i in input:
-      if isinstance(i, str):
-        res += redis_protocol('bulk', i)
-      if isinstance(i, int):
-        res += redis_protocol('int', i)
+#   if type == 'array' and len(input) > 1:
+#     symbol = '*'
+#     res = f"{len(input)}\r\n"
+#     for i in input:
+#       if isinstance(i, str):
+#         res += redis_protocol_encoder('bulk', i)
+#       if isinstance(i, int):
+#         res += redis_protocol_encoder('int', i)
  
-    return f"{symbol}{res}"
+#     return f"{symbol}{res}"
     
 
 
@@ -37,6 +39,8 @@ parser = ArgumentParser()
 parser.add_argument("--port", type=int, default=6379)
 parser.add_argument("--replicaof", type=str, default='')
 parser.add_argument("--local", type=str, default='False')
+parser.add_argument("--dir", type=str, default='/tmp/redis-data')
+parser.add_argument("--dbfilename", type=str, default='rdbfile')
 offset = 0
 start_record_offset = False
 
@@ -56,7 +60,6 @@ def to_redis_protocol(command: str) -> str: # local
     for part in parts:
         proto += f"${len(part)}\r\n{part}\r\n"
     return proto
-
 
 
 
@@ -143,35 +146,49 @@ replicas = []
 updated_replicas = []
 updated_replicas_number = 0
 
-def parse_command(client_socket, parser_request) -> bytes:
+
+
+
+
+def parse_command(client_socket, commands) -> bytes:
     global offset
     global start_record_offset
     global updated_replicas_number
 
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - parser_request: {parser_request}")
-    if not parser_request:
+    commands = [command.lower() for command in commands]
+
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - commands: {commands}")
+    if not commands:
         return 
     
-    elif "ping" in parser_request[0].lower():
-        if role == 'master':
-            response = b'+PONG\r\n'
-            client_socket.send(response)
-        if role == 'slave':
-            return
-       
-    elif "echo" in parser_request[0].lower():
-        response = f'+{parser_request[1]}\r\n'.encode()
+    elif "ping" in commands[0].lower():
+        args = {
+            'role' : "slave" if replicaof else "master" 
+        }
+        response = handel_ping(commands, args)
         client_socket.send(response)
 
-    elif 'set' in parser_request[0].lower():
+    elif "config" in commands[0].lower():
+        args = {
+            'dbfilename':parser.parse_args().dbfilename,
+            'dir': parser.parse_args().dir
+        }
+        response = handle_config(commands, args)
+        client_socket.send(response)
+       
+    elif "echo" in commands[0].lower():
+        response = handle_echo(commands)
+        client_socket.send(response)
+
+    elif 'set' in commands[0].lower():
         
-        key_name = parser_request[1]
-        value = parser_request[2]
+        key_name = commands[1]
+        value = commands[2]
         cache_dict[key_name] = value
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - SET key: {key_name} -  VALUE: {value}")
 
-        if len(parser_request) > 4 and 'px' in parser_request[3]:
-            expire_time = parser_request[4]
+        if len(commands) > 4 and 'px' in commands[3]:
+            expire_time = commands[4]
             current_time_ms = int(time.time() * 1000)
             expire_time_dict[key_name] = current_time_ms + int(expire_time)
 
@@ -179,24 +196,7 @@ def parse_command(client_socket, parser_request) -> bytes:
         if role == 'master':  # master
             updated_replicas_number = 0
             # rep.send(redis_protocol('array',res))
-            response = redis_protocol('str','OK').encode()
-            # response = f'+OK\r\n'.encode()
-            # for index, replica in enumerate(replicas):
-            #     try:
-            #         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Sync data to slave - {index+1} / total {len(replicas)} ")
-
-            #         if parser.parse_args().local == 'True':
-            #             replica.send((f"SET {key_name} {value}").encode())
-            #         else:
-            #             res = ["SET", key_name , value]
-            #             replica.send(to_redis_protocol(f"SET {key_name} {value}").encode())
-
-            #     except Exception as e:
-            #         print(f"Failed to send to replica: {e}")
-            
-            
-
-            # 立即发送 REPLCONF GETACK *
+            response = redis_protocol_encoder('str','OK').encode()
         
             # client_socket.send(response)
             for index, replica in enumerate(replicas):
@@ -213,24 +213,15 @@ def parse_command(client_socket, parser_request) -> bytes:
         
                     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - command: REPLCONF GETACK *")
 
-                    # rep.send(f'REPLCONF GETACK *').encode()
-                    # if parser.parse_args().local == 'True':
-                    #     replica.send((f'REPLCONF GETACK *').encode())
-                    # else:
-                    #     res = ["REPLCONF", "GETACK", "*"]
-                    #     replica.send(redis_protocol('array',res).encode())
-                    # updated_replicas.append(replica)
-                        # 在这里可以添加更多的逻辑来处理与主服务器的通信
-                        # rep.send(to_redis_protocol(f'REPLCONF GETACK *').encode())
                 except Exception as e:
                     print(f"Failed to send to replica: {e}")
             client_socket.send(response)
         if role == 'slave':
             return 
         
-    elif 'get' in parser_request[0].lower():
+    elif 'get' in commands[0].lower():
         response = ''
-        key_name = parser_request[1]
+        key_name = commands[1]
 
         if key_name in expire_time_dict:
             expire_time = expire_time_dict[key_name]
@@ -247,7 +238,7 @@ def parse_command(client_socket, parser_request) -> bytes:
             response = f'+{res}\r\n'.encode()
         client_socket.send(response)
 
-    elif 'info' in parser_request[0].lower():
+    elif 'info' in commands[0].lower():
         res = f'role:{role}\n'
         res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
         res += 'master_repl_offset:0'
@@ -256,21 +247,21 @@ def parse_command(client_socket, parser_request) -> bytes:
 
 
     # Connect by Replica
-    elif 'replconf' in parser_request[0].lower():
-        print(f'{role} get {parser_request[1].lower()}')
+    elif 'replconf' in commands[0].lower():
+        print(f'{role} get {commands[1].lower()}')
         response = ''
 
-        if role == 'master' and 'ack' in parser_request[1].lower():
+        if role == 'master' and 'ack' in commands[1].lower():
             updated_replicas_number += 1
             print(f"replconf updated_replicas_number: {updated_replicas_number}")
             return 
 
-        if role == 'slave' and 'getack' in parser_request[1].lower():
+        if role == 'slave' and 'getack' in commands[1].lower():
             print(f'send REPLCONF ACK {offset}\r\n')
             # response = to_redis_protocol(f'REPLCONF ACK {offset}\r\n').encode()  
             res = ["REPLCONF", "ACK", str(offset)]
-            print(f"REPLCONF:{redis_protocol('array',res)}")
-            response = redis_protocol('array',res).encode()
+            print(f"REPLCONF:{redis_protocol_encoder('array',res)}")
+            response = redis_protocol_encoder('array',res).encode()
             start_record_offset = True
             return client_socket.send(response)
 
@@ -281,7 +272,7 @@ def parse_command(client_socket, parser_request) -> bytes:
         
 
     # Send RDB file to create A replica & Add to replicas
-    elif 'psync' in parser_request[0].lower():
+    elif 'psync' in commands[0].lower():
         REPL_ID = '8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb'
         response = f'+FULLRESYNC {REPL_ID} 0\r\n'.encode()
         client_socket.send(response)
@@ -296,9 +287,9 @@ def parse_command(client_socket, parser_request) -> bytes:
 
     
     # WAIT 1 500
-    elif 'wait' in parser_request[0].lower():
-        num_replicas = int(parser_request[1])
-        timeout = int(parser_request[2]) / 1000  # Convert to seconds
+    elif 'wait' in commands[0].lower():
+        num_replicas = int(commands[1])
+        timeout = int(commands[2]) / 1000  # Convert to seconds
         start_time = time.time()
 
         for index, replica in enumerate(replicas):
@@ -307,7 +298,7 @@ def parse_command(client_socket, parser_request) -> bytes:
                     replica.send((f'REPLCONF GETACK *').encode())
                 else:
                     res = ["REPLCONF", "GETACK", "*"]
-                    replica.send(redis_protocol('array', res).encode())
+                    replica.send(redis_protocol_encoder('array', res).encode())
             except Exception as e:
                 print(f"Failed to send REPLCONF GETACK to replica: {e}")
 
@@ -337,7 +328,7 @@ def connect_to_master() -> None:
 
     try:
         # replica_to_master_socket.send(to_redis_protocol(f'REPLCONF listening-port 6380').encode())
-        response = redis_protocol('array',['REPLCONF','listening-port','6380']).encode()
+        response = redis_protocol_encoder('array',['REPLCONF','listening-port','6380']).encode()
         replica_to_master_socket.send(response)
         response = replica_to_master_socket.recv(1024)
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
@@ -347,7 +338,7 @@ def connect_to_master() -> None:
         print(f"fail: {e}")
 
     try:
-        response = redis_protocol('array',['REPLCONF','capa','psync']).encode()
+        response = redis_protocol_encoder('array',['REPLCONF','capa','psync']).encode()
         replica_to_master_socket.send(response)
         # replica_to_master_socket.send(to_redis_protocol('REPLCONF capa psync').encode())
         # response = replica_to_master_socket.recv(1024)
@@ -357,7 +348,7 @@ def connect_to_master() -> None:
         print(f"fail: {e}")
 
     try:
-        response = redis_protocol('array',['PSYNC','?','-1']).encode()
+        response = redis_protocol_encoder('array',['PSYNC','?','-1']).encode()
         replica_to_master_socket.send(response)
 
         # replica_to_master_socket.send(to_redis_protocol('PSYNC ? -1').encode())
