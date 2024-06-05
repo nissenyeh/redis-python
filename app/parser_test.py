@@ -1,5 +1,6 @@
 import pytest
-from parser import redis_protocol_encoder, redis_protocol_parser
+# from parser import redis_protocol_encoder, redis_protocol_parser
+from app.parser import redis_protocol_encoder, redis_protocol_parser
 
 class TestRedisProtocolEncoder:
     def test_to_redis_protocol_for_simple_strings(self) -> str:
@@ -19,6 +20,10 @@ class TestRedisProtocolEncoder:
 
 
     def test_to_redis_protocol_for_array(self) -> str:
+        data =  ['array']
+        result = redis_protocol_encoder('array', data)
+        assert result == "*1\r\n$5\r\narray\r\n"
+
         data =  [1,2,3]
         result = redis_protocol_encoder('array', data)
         assert result == "*3\r\n:1\r\n:2\r\n:3\r\n"
@@ -61,6 +66,10 @@ class TestRedisProtocolParser:
         str =  "*4\r\n:1\r\n$3\r\nten\r\n:2\r\n$5\r\nhello\r\n"
         result = redis_protocol_parser(str)
         assert result == [1,'ten',2,'hello']
+
+        str =  "*2\r\n$4\r\nkeys\r\n$1\r\n*\r\n"
+        result = redis_protocol_parser(str)
+        assert result == ['keys', '*']
     
 
 if __name__ == "__main__":

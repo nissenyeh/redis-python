@@ -7,8 +7,13 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument("--port", type=int, default=6379)
 parser.add_argument("--replicaof", type=str, default='')
+parser.add_argument("--dir", type=str, default='')
+parser.add_argument("--dbfilename", type=str, default='')
 port = parser.parse_args().port
 replicaof = parser.parse_args().replicaof
+
+dir = parser.parse_args().dir
+dbfilename = parser.parse_args().dbfilename
 
 
 class ChangeHandler(FileSystemEventHandler):
@@ -20,7 +25,12 @@ class ChangeHandler(FileSystemEventHandler):
     def start_script(self):
         if self.process:
             self.process.terminate()
-        self.process = subprocess.Popen(['sh', self.script, '--local', str(True) ,'--port', str(port), '--replicaof', replicaof])
+        commands = ['sh', self.script, '--local', str(True) ,'--port', str(port), '--replicaof', replicaof]
+        if dir:
+            commands.extend(['--dir', dir])
+        if dbfilename:
+            commands.extend(['--dbfilename', dbfilename])
+        self.process = subprocess.Popen(commands)
 
     def on_modified(self, event):
         if event.src_path.endswith('app/main.py'):

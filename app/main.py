@@ -6,41 +6,15 @@ import time
 from argparse import ArgumentParser
 
 from app.parser import redis_protocol_encoder, redis_protocol_parser
-from app.command_handler import handle_echo, handel_ping, handle_config
-
-# def redis_protocol_encoder(type , input) -> str: # local
-#   if type == 'str':
-#     symbol = '+'
-#     return f"{symbol}{input}\r\n"
-
-#   if type == 'int':
-#     symbol = ':'
-#     return f"{symbol}{input}\r\n"
-  
-#   if type == 'bulk':
-#     symbol = '$'
-#     res = str(len(input)) + "\r\n" + input + "\r\n"
-#     return f"{symbol}{res}"
-  
-#   if type == 'array' and len(input) > 1:
-#     symbol = '*'
-#     res = f"{len(input)}\r\n"
-#     for i in input:
-#       if isinstance(i, str):
-#         res += redis_protocol_encoder('bulk', i)
-#       if isinstance(i, int):
-#         res += redis_protocol_encoder('int', i)
- 
-#     return f"{symbol}{res}"
+from app.command_handler import handle_echo, handel_ping, handle_config, handle_info, handle_keys
     
-
 
 parser = ArgumentParser()
 parser.add_argument("--port", type=int, default=6379)
 parser.add_argument("--replicaof", type=str, default='')
 parser.add_argument("--local", type=str, default='False')
-parser.add_argument("--dir", type=str, default='/tmp/redis-data')
-parser.add_argument("--dbfilename", type=str, default='rdbfile')
+parser.add_argument("--dir", type=str, default='')
+parser.add_argument("--dbfilename", type=str, default='')
 offset = 0
 start_record_offset = False
 
@@ -63,7 +37,6 @@ def to_redis_protocol(command: str) -> str: # local
 
 
 
-
 def handle_connection(client_socket):
     global offset
 
@@ -75,10 +48,10 @@ def handle_connection(client_socket):
             if start_record_offset:
                 offset += len(request)
             print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} -  redis server get a request: {request}")
-            parser_requests: list = parse_request(request)
-            for parser_request in parser_requests:
-                print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - redis command running: {parser_request}")
-                parse_command(client_socket, parser_request)
+            commands: list = parse_request(request)
+            # for parser_request in parser_requests:
+            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - redis command running: {commands}")
+            parse_command(client_socket, commands)
                 
         except Exception as e:
             print(f"An error occurred: {e}")
@@ -91,51 +64,26 @@ def parse_request(request) ->list:
 
     # run only in local 
     if parser.parse_args().local == 'True':
-        request_str = to_redis_protocol(request_str)
+        if ' ' in request_str:
+            request_str :list = redis_protocol_encoder('array', request_str.split())
+            # *2$4echo$5hello -> ['echo', 'hello]
+        else:
+            # $5\r\nhello\r\n -> hello
+            request_str :str = redis_protocol_encoder('str', request_str)
+        print(f"request_str:{request_str}")
+        # print(f"redis_protocol_encoder_request_str:{redis_protocol_encoder('array', request_str.split())}")
     
-    # e.g: *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
-    # ['*2', '$4', 'ECHO', '$3', 'hey', '']
-    # e.g: *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
-    # ['*3', 'SET', '3', 'bar', '']
-    # if '\r\n' in request_str:
-    #     parse_request = re.split(r'\r\n|\\r\\n', request_str)[2:-1:2]
-    # else: # e.g: ping 
-    #     parse_request = [request_str]
-
-    commands = request_str.split('*')
-    for command in commands:
-        if command:
-            command = '*' + command  # 恢复分割时丢失的 '*'
-            if '\r\n' in command:
-                parsed_command = re.split(r'\r\n|\\r\\n', command)[2:-1:2]
-            else:  # e.g: ping 
-                parsed_command = [command]
-            if parsed_command:
-                parse_requests.append(parsed_command)
-
-    # commands = request_str.split('*') ## local 
-    # for command in commands:
-    #     if command:
-    #         command = '*' + command  # 恢复分割时丢失的 '*'
-    #         if '\r\n' in command:
-    #             parts = re.split(r'\r\n', command)
-    #             parsed_command = []
-    #             i = 1
-    #             while i < len(parts):
-    #                 if parts[i].startswith('$'):
-    #                     parsed_command.append(parts[i + 1])
-    #                     i += 2
-    #                 else:
-    #                     i += 1
-    #         else:  # e.g: ping 
-    #             parsed_command = [command]
-    #         if parsed_command:
-    #             parse_requests.append(parsed_command)
 
 
-    print(f'parser_request: {parse_requests}')
+    parsed = redis_protocol_parser(request_str)
+    commands = parsed if isinstance(parsed, list) else [parsed]
 
-    return parse_requests
+   
+
+
+    print(f'commands: {commands}')
+
+    return commands
 
 replicaof = parser.parse_args().replicaof
 get_first_getack = False
@@ -148,6 +96,12 @@ updated_replicas_number = 0
 
 
 
+def respond(client_socket, response):
+    if parser.parse_args().local == 'True':
+        parses: list | str = redis_protocol_parser(response.decode())
+        client_socket.send(parses.encode() if isinstance(parses,str) else str(parses).encode())
+    else:
+        client_socket.send(response)
 
 
 def parse_command(client_socket, commands) -> bytes:
@@ -161,25 +115,34 @@ def parse_command(client_socket, commands) -> bytes:
     if not commands:
         return 
     
-    elif "ping" in commands[0].lower():
+    elif "ping" in commands[0]:
         args = {
             'role' : "slave" if replicaof else "master" 
         }
         response = handel_ping(commands, args)
-        client_socket.send(response)
+        respond(client_socket, response)
 
-    elif "config" in commands[0].lower():
+    elif "config" in commands[0]:
         args = {
-            'dbfilename':parser.parse_args().dbfilename,
-            'dir': parser.parse_args().dir
+            'dir': parser.parse_args().dir,
+            'dbfilename':parser.parse_args().dbfilename
         }
         response = handle_config(commands, args)
         client_socket.send(response)
        
-    elif "echo" in commands[0].lower():
+    elif "echo" in commands[0]:
         response = handle_echo(commands)
-        client_socket.send(response)
+        respond(client_socket, response)
+        # client_socket.send(response)
 
+    elif "keys" in commands[0]:
+        args = {
+            'dir': parser.parse_args().dir,
+            'dbfilename':parser.parse_args().dbfilename
+        }
+        response = handle_keys(commands, args)
+        respond(client_socket, response)
+        # client_socket.send(response)       
     elif 'set' in commands[0].lower():
         
         key_name = commands[1]
@@ -238,11 +201,11 @@ def parse_command(client_socket, commands) -> bytes:
             response = f'+{res}\r\n'.encode()
         client_socket.send(response)
 
-    elif 'info' in commands[0].lower():
-        res = f'role:{role}\n'
-        res += 'master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\n'
-        res += 'master_repl_offset:0'
-        response = f'+{res}\r\n'.encode()
+    elif 'info' in commands[0]:
+        args = {
+            'role': role
+        }
+        response = handle_info(commands, args)
         client_socket.send(response)
 
 

@@ -1,4 +1,4 @@
-def redis_protocol_parser(input):
+def redis_protocol_parser(input): 
   if input.startswith('+'):
     return input.lstrip('+').rstrip('\r\n')
   
@@ -43,7 +43,7 @@ def redis_protocol_encoder(type , input) -> str: # local
     res = str(len(input)) + "\r\n" + input + "\r\n"
     return f"{symbol}{res}"
   
-  if type == 'array' and len(input) > 1:
+  if type == 'array' and len(input) >= 1:
     symbol = '*'
     res = f"{len(input)}\r\n"
     for i in input:
