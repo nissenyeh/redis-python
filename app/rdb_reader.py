@@ -67,6 +67,7 @@ class RDB_PARSER:
             result[f"{key}"] = f"{value}"
         return result
 
+
     def getKeys(self):
         print("this is reaching getKeysFunction in RDBPARSER")
         data = self.readDB()

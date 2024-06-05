@@ -63,7 +63,14 @@ value in `codecrafters.yml`.
 ## testing in local
 
 ```
-python watcher.py
+./spawn_redis_server.sh --port 6379
+or
+python watcher.py --port 6379
+
+
+./spawn_redis_server.sh --port 6380 --replicaof "localhost 6379"
+or
+python watcher.py --port 6380 --replicaof "localhost 6379"
 ```
 
 ```

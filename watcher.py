@@ -25,7 +25,7 @@ class ChangeHandler(FileSystemEventHandler):
     def start_script(self):
         if self.process:
             self.process.terminate()
-        commands = ['sh', self.script, '--local', str(True) ,'--port', str(port), '--replicaof', replicaof]
+        commands = ['sh', self.script, '--local', str(False) ,'--port', str(port), '--replicaof', replicaof]
         if dir:
             commands.extend(['--dir', dir])
         if dbfilename:

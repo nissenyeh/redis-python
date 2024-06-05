@@ -1,7 +1,8 @@
 from app.parser import redis_protocol_encoder
 from app.rdb_reader import RDB_PARSER
 
-def handel_ping(role, args):
+def handel_ping(commands, args):
+    # commands: ['ping']
     role = args['role']
     if role == 'master':
         return redis_protocol_encoder('str', 'PONG').encode()
@@ -9,6 +10,7 @@ def handel_ping(role, args):
         return
 
 def handle_echo(commands):
+    # commands: ['echo'. 'hello']
     return redis_protocol_encoder('str', commands[1]).encode()
 
 
