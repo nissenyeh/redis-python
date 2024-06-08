@@ -22,12 +22,15 @@ class Split:
 
       if Split.is_simple_str(element):
           split = elements[index]+'\r\n'
-          result.append(split)
+          command = redis_protocol_parser(split)
+          result.append([command])
+
           index+=1
 
       elif Split.is_bulk_string(element):
         split = elements[index]+'\r\n'+elements[index+1]+'\r\n'
-        result.append(split)
+        command = redis_protocol_parser(split)
+        result.append([command])
         index+=2
 
       elif Split.is_array(element):
@@ -41,7 +44,8 @@ class Split:
             re += elements[index]+'\r\n'
             index +=1
             num +=1
-        result.append(re)
+        command = redis_protocol_parser(re)
+        result.append(command)
       else:
         break
 
@@ -49,10 +53,12 @@ class Split:
      
 
   def parse_str_to_command_list(request_str: str) -> list:
-    if ';' in request_str: # mutiple command
-        requests = request_str.split(';')
+    request_str = request_str.replace('\r\n', '')
+    if ' ' in request_str:
+       requests = [request_str.split(' ')]
     else:
-        requests = [request_str]
+      requests = [[request_str]]
+
     return requests
 
 
@@ -71,22 +77,12 @@ def encode_for_local_command(str_command):
       str_command :str = redis_protocol_encoder('str', str_command)
   return str_command
 
-def decode_commands_by_redis_protocol(str_commands: list, is_local_command=False) -> list:
-  commands = []
-  for str_command in str_commands:
-    if is_local_command:
-      str_command = encode_for_local_command(str_command)
-    parsed = redis_protocol_parser(str_command) # => ['echo', 'hello'] or ping
-    command = parsed if isinstance(parsed, list) else [parsed]
-    commands.append(command)
-  return commands
 
 # Sync as Main
 def parse_request(request: bytes, is_local_command=False) ->list:
     
     request_str: str = request.decode(errors='ignore') 
-    str_commands = split_commands(request_str, is_local_command)
-    commands = decode_commands_by_redis_protocol(str_commands, is_local_command)
+    commands = split_commands(request_str, is_local_command)
 
     return commands
 

@@ -134,7 +134,8 @@ def parse_command(client_socket, commands) -> bytes:
                     respond(replica, replica_message)
                 except Exception as e:
                     print(f"Failed to send to replica: {e}")
-            offset += len(replica_message) # Record command send to replica
+            if len(replicas) > 0:
+                offset += len(replica_message) # Record command send to replica
             response = redis_protocol_encoder('str','OK').encode()
             respond(client_socket, response)
         if role == 'slave':
@@ -214,9 +215,9 @@ def parse_command(client_socket, commands) -> bytes:
         updated_to_date_replicas_number += 1
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - replicas : {replicas}")
         time.sleep(1)  # 延遲 1 秒，避免後面指令，會跟 RDB file 黏再一起
-        
 
-    
+
+
     # WAIT 1 500
     elif 'wait' in commands[0]:
         num_replicas = int(commands[1])
@@ -242,23 +243,11 @@ def parse_command(client_socket, commands) -> bytes:
             except Exception as e:
                 print(f"Failed to send REPLCONF GETACK to replica: {e}")
 
-#         command = ["REPLCONF", "GETACK", "*"]
-#         replica_message = redis_protocol_encoder('array', command).encode()
-#         try:
-#             for replica in replicas:
-#                 thread = threading.Thread(target=respond, args=[replica,replica_message])
-#                 thread.start()
-#         except Exception as e:
-#             print(f"Failed to send REPLCONF GETACK to replica: {e}")
-# # 
-        # for thread in threads:
-        #     thread.join()
-
         # 測試遇到的問題： 才把 GETACK 送出去， ACK 還沒回來就時間到了，所以 return 0
         while time.time() - start_time <= timeout:
             if updated_to_date_replicas_number >= num_replicas:
                 break
-        time.sleep(1)
+        # time.sleep(1)
 
         response = redis_protocol_encoder('int', updated_to_date_replicas_number).encode()
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - response: {response}")

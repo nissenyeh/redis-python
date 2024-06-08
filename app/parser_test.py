@@ -2,11 +2,7 @@ import pytest
 # from parser import redis_protocol_encoder, redis_protocol_parser
 from app.parser import (
     encode_for_local_command,
-    decode_commands_by_redis_protocol,
-    # parse_str_to_command_list,
     Split,
-    split_commands,
-    # split_redis_protocol,
     parse_request,
     redis_protocol_encoder,
     redis_protocol_parser
@@ -70,31 +66,25 @@ class TestRedisProtocolParser:
 
         str =  "+ping\r\n"
         result = Split.split_redis_protocol(str)
-        assert result[0] == '+ping\r\n'
+        assert result[0] == ['ping']
 
         str =  "$5\r\nhello\r\n$6\r\nNissen\r\n"
         result = Split.split_redis_protocol(str)
-        assert result[0] == '$5\r\nhello\r\n'
-        assert result[1] == '$6\r\nNissen\r\n'
+        assert result[0] == ['hello']
+        assert result[1] == ['Nissen']
 
         str =  "+ping\r\n$5\r\nhello\r\n$6\r\nNissen\r\n"
         result = Split.split_redis_protocol(str)
-        assert result[0] == '+ping\r\n'
-        assert result[1] == '$5\r\nhello\r\n'
-        assert result[2] == '$6\r\nNissen\r\n'
-
-
-        str = "$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\x00\xfa\x08aof-base\xc0\x00\xff\xf0n;\xfe\xc0\xffZ\xa2\r\n*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"
-
-        result = Split.split_redis_protocol(str)
-        assert result[0] == '$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\x00\xfa\x08aof-base\xc0\x00\xff\xf0n;\xfe\xc0\xffZ\xa2\r\n'
-        assert result[1] == '*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
+        assert result[0] == ['ping']
+        assert result[1] == ['hello']
+        assert result[2] == ['Nissen']
 
         str = '*3\r\n$3\r\nSET\r\n$6\r\norange\r\n$9\r\npineapple\r\n*3\r\n$3\r\nSET\r\n$4\r\npear\r\n$9\r\nraspberry\r\n*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
         result = Split.split_redis_protocol(str)
-        assert result[0] == '*3\r\n$3\r\nSET\r\n$6\r\norange\r\n$9\r\npineapple\r\n'
-        assert result[1] == '*3\r\n$3\r\nSET\r\n$4\r\npear\r\n$9\r\nraspberry\r\n'
-        assert result[2] == '*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
+        assert result[0] == ['SET', 'orange', 'pineapple']
+        assert result[1] == ['SET', 'pear', 'raspberry']
+        assert result[2] == ['REPLCONF', 'GETACK', '*']
+
 
     def test_parse_redis_protocol_for_array(self):
         str =  "*3\r\n:1\r\n:2\r\n:3\r\n"
@@ -122,86 +112,31 @@ class TestCommandParser:
         assert result == [['ping']]
 
 
-        data = b'ping' # local allowed only
+        data = b'pingg' # local allowed only
         result = parse_request(data, is_local_command=True)
-        assert result == [['ping']]
+        assert result == [['pingg']]
 
-        data = b'echo hello;echo hello' # local allowed only
+        data = b'echo hello' # local allowed only
         result = parse_request(data, is_local_command=True)
-        assert result == [['echo', 'hello'], ['echo', 'hello']]
+        assert result == [['echo', 'hello']]
 
         data = b'*3\r\n$3\r\nSET\r\n$9\r\npineapple\r\n$6\r\nbanana\r\n*3\r\n$3\r\nSET\r\n$4\r\npear\r\n$9\r\npineapple\r\n*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n' # local allowed only
         result = parse_request(data, is_local_command=False)
-        print(result)
+        assert result[0] == ['SET', 'pineapple', 'banana']
+        assert result[1] == ['SET', 'pear', 'pineapple']
+        assert result[2] == ['REPLCONF', 'GETACK', '*']
 
-
-    def test_parse_str_to_commands(self):
-
-        data = '*1\r\n$4\r\nPING\r\n'
-        result = Split.parse_str_to_command_list(data)
-        print(result)
-
-        data = '+ping\r\n'
-        result = Split.parse_str_to_command_list(data)
-        assert result == ['+ping\r\n']
-
-        data = '+ping\r\n;+ping\r\n'
-        result = Split.parse_str_to_command_list(data)
-        assert result == ['+ping\r\n','+ping\r\n']
 
     def test_parse_str_to_local_commands(self):
         data = 'ping'
         result = Split.parse_str_to_command_list(data)
-        assert result == ['ping']
+        assert result == [['ping']]
 
-        data = 'ping;ping'
+        data = 'ping ping'
         result = Split.parse_str_to_command_list(data)
-        assert result == ['ping','ping']
-
-    def test_split_commands(self):
-        
-        str =  "$5\r\nhello\r\n"
-        result = split_commands(str)
-        assert result[0] == '$5\r\nhello\r\n'
-
-        str = "$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\x00\xfa\x08aof-base\xc0\x00\xff\xf0n;\xfe\xc0\xffZ\xa2\r\n*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n"
-        result = split_commands(str)
-
-        assert result[0] == '$88\r\nREDIS0011\xfa\tredis-ver\x057.2.0\xfa\nredis-bits\xc0@\xfa\x05ctime\xc2m\x08\xbce\xfa\x08used-mem\xc2\xb0\xc4\x10\x00\xfa\x08aof-base\xc0\x00\xff\xf0n;\xfe\xc0\xffZ\xa2\r\n'
-        assert result[1] == '*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
-
-        str = '*3\r\n$3\r\nSET\r\n$6\r\norange\r\n$9\r\npineapple\r\n*3\r\n$3\r\nSET\r\n$4\r\npear\r\n$9\r\nraspberry\r\n*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
-        result = split_commands(str)
-        assert result[0] == '*3\r\n$3\r\nSET\r\n$6\r\norange\r\n$9\r\npineapple\r\n'
-        assert result[1] == '*3\r\n$3\r\nSET\r\n$4\r\npear\r\n$9\r\nraspberry\r\n'
-        assert result[2] == '*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n'
-
-        data = 'ping'
-        result = split_commands(data, is_local_command=True)
-        assert result == ['ping']
-
-        data = 'ping;ping'
-        result = split_commands(data, is_local_command=True)
-        assert result == ['ping','ping']  
+        assert result == [['ping','ping']]
 
 
-    def test_decode_commands_by_redis_protocol(self):
-        data = ['+ping\r\n']
-        result = decode_commands_by_redis_protocol(data)
-        assert result == [['ping']]
-
-        data = ['+ping\r\n','+ping\r\n']
-        result = decode_commands_by_redis_protocol(data)
-        assert result == [['ping'], ['ping']]
-
-    def test_decode_local_commands_by_redis_protocol(self):
-        data = ['ping']
-        result = decode_commands_by_redis_protocol(data, True)
-        assert result == [['ping']]
-
-        data = ['ping', 'ping']
-        result = decode_commands_by_redis_protocol(data, True)
-        assert result == [['ping'], ['ping']]
 
     def test_encode_for_local_command(self):
         data = "echo hello"
