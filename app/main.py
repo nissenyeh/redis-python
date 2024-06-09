@@ -1,12 +1,20 @@
 import socket
 import threading
 import time
+
 from argparse import ArgumentParser
-
-from app.parser import parse_request , redis_protocol_encoder, redis_protocol_parser
-from app.command_handler import handle_echo, handel_ping, handle_config, handle_info, handle_keys
-    
-
+from app.package.command_parser import (
+    parse_request,
+    redis_protocol_encoder,
+    redis_protocol_parser
+)
+from app.package.command_handler import (
+    handle_echo,
+    handel_ping,
+    handle_config,
+    handle_info,
+    handle_keys
+)
 # argument
 parser = ArgumentParser()
 parser.add_argument("--port", type=int, default=6379)
@@ -50,8 +58,9 @@ def handle_connection(client_socket, thread_name):
             is_local_command = True if parser.parse_args().local == 'True' else False
 
             commands: list = parse_request(request, is_local_command)
+            if commands:
+               print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Redis server get commands: {commands}")
 
-            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Redis server get commands: {commands}")
             for command in commands:
                 parse_command(client_socket, command)
                 
@@ -206,9 +215,9 @@ def parse_command(client_socket, commands) -> bytes:
         rdb_hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
         rdb_content = bytes.fromhex(rdb_hex)
         rdb_length = len(rdb_content)
-        response = f"${rdb_length}\r\n".encode()+ rdb_content # + b"\r\n"
+        response = f"${rdb_length}\r\n".encode()+ rdb_content  # + b"\r\n"
         print(f'response: {response}')
-        respond(client_socket, response)
+        client_socket.send(response) # local needed
 
         print(f'psync - updated_to_date_replicas_number:{updated_to_date_replicas_number}')
         replicas.append(client_socket)
@@ -279,7 +288,6 @@ def connect_to_master() -> None:
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - [handshake(2/3)] Successfully send 'REPLCONF' to the master server {host}:{port}, response: {response}")
     except Exception as e:
         print(f"fail: {e}")
-
 
     try:
         command = ['REPLCONF','capa','psync']

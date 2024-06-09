@@ -1,5 +1,10 @@
 import pytest
-from command_handler import handle_echo, handel_ping, handle_config, handle_info
+from app.package.command_handler import (
+  handle_echo, 
+  handel_ping, 
+  handle_config, 
+  handle_info
+)
 
 class TestRedisProtocolEncoder:
     def test_handle_echo(self) -> str:

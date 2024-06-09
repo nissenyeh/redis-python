@@ -1,8 +1,7 @@
 import pytest
-# from parser import redis_protocol_encoder, redis_protocol_parser
-from app.parser import (
-    encode_for_local_command,
+from app.package.command_parser import (
     Split,
+    encode_for_local_command,
     parse_request,
     redis_protocol_encoder,
     redis_protocol_parser

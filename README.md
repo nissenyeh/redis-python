@@ -1,72 +1,52 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/85bc17fa-0fe5-477a-ae70-b16c303d5b1a)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Redis Server
 
-This is a starting point for Python solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+This is a Python-based  Redis server.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- Redis is an in-memory database that persists on disk.
+- 
 
-# Passing the first stage
 
-The entry point for your Redis implementation is in `app/main.py`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+## Support command
 
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
-```
 
-That's all!
+- Support the following commands
+    - PING: Send a greeting to the server
+    - ECHO:
+    - SET & GET: Store and retrieve data
+    - INFO
+    - CONFIG
+- Support multiple concurrent commands
+- Support synchronization with Replica
+- Data persistence
 
-# Stage 2 & beyond
+## DEMO
 
-Note: This section is for stages 2 and beyond.
+1. Basic  Command
+  - PING: Send a greeting to the server
+  - ECHO:
+  - SET & GET: Store and retrieve data
+  - INFO
+  - CONFIG
 
-1. Ensure you have `python (3.x)` installed locally
-1. Run `./spawn_redis_server.sh` to run your Redis server, which is implemented
-   in `app/main.py`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
 
-# Troubleshooting
 
-## module `socket` has no attribute `create_server`
+2. (Master - Replica) Partial Resynchronization
 
-When running your server locally, you might see an error like this:
-
-```
-Traceback (most recent call last):
-  File "/.../python3.7/runpy.py", line 193, in _run_module_as_main
-    "__main__", mod_spec)
-  File "/.../python3.7/runpy.py", line 85, in _run_code
-    exec(code, run_globals)
-  File "/app/app/main.py", line 11, in <module>
-    main()
-  File "/app/app/main.py", line 6, in main
-    s = socket.create_server(("localhost", 6379), reuse_port=True)
-AttributeError: module 'socket' has no attribute 'create_server'
-```
-
-This is because `socket.create_server` was introduced in Python 3.8, and you
-might be running an older version.
-
-You can fix this by installing Python 3.8 locally and using that.
-
-If you'd like to use a different version of Python, change the `language_pack`
-value in `codecrafters.yml`.
 
 ## testing in local
 
 ```
 ./spawn_redis_server.sh --port 6379
 or
-python watcher.py --port 6379
+python watcher.py --port 6379 # hot load
 
+```
+
+- Run a replica server
+`./spawn_redis_server.sh --port <port> --replicaof "localhost <master-prot>"`
+
+```
 
 ./spawn_redis_server.sh --port 6380 --replicaof "localhost 6379"
 or
@@ -75,18 +55,4 @@ python watcher.py --port 6380 --replicaof "localhost 6379"
 
 ```
 telnet localhost 6379
-```
-
-``` 
-def to_redis_protocol(command: str) -> str:
-    parts = command.split()
-    proto = f"*{len(parts)}\r\n"
-    for part in parts:
-        proto += f"${len(part)}\r\n{part}\r\n"
-    return proto
-```
-
-```
-PING *1\r\n$4\r\nPING\r\n
-ECHO *2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n
 ```

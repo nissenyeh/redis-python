@@ -57,8 +57,7 @@ class Split:
     if ' ' in request_str:
        requests = [request_str.split(' ')]
     else:
-      requests = [[request_str]]
-
+      requests = [[request_str]] if request_str else []
     return requests
 
 
@@ -78,12 +77,9 @@ def encode_for_local_command(str_command):
   return str_command
 
 
-# Sync as Main
 def parse_request(request: bytes, is_local_command=False) ->list:
-    
     request_str: str = request.decode(errors='ignore') 
     commands = split_commands(request_str, is_local_command)
-
     return commands
 
 def redis_protocol_parser(input): 

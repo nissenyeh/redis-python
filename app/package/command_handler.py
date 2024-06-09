@@ -1,5 +1,5 @@
-from app.parser import redis_protocol_encoder
-from app.rdb_reader import RDB_PARSER
+from app.package.command_parser import redis_protocol_encoder
+from app.package.rdb_reader import RDB_PARSER
 
 def handel_ping(commands, args):
     # commands: ['ping']
